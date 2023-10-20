@@ -1,0 +1,67 @@
+version: '3.8'
+services:
+  config:
+    container_name: mongodb-config
+    restart: always
+    image: mongo:7.0.2
+    command: mongod --configsvr --replSet configReplSet --bind_ip_all --keyFile /usr/local/etc/keyfile.txt --port 27017
+    volumes:
+      - ./data/config:/data/db
+      - ./scripts/init-configsvr.js:/docker-entrypoint-initdb.d/init-configsvr.js:ro
+      - ./config/keyfile.txt:/usr/local/etc/keyfile.txt
+    networks:
+      - maner-ai
+
+  shard0-1:
+    restart: always
+    container_name: mongodb-shard0-1
+    image: mongo:7.0.2
+    command: mongod --shardsvr --replSet shard0ReplSet --bind_ip_all --keyFile /usr/local/etc/keyfile.txt  --port 27017
+    depends_on:
+      - shard0-2
+    networks:
+      - maner-ai
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb-shard0-1
+    volumes:
+      - ./data/shard0-1:/data/db
+      - ./scripts/init-shard0.js:/docker-entrypoint-initdb.d/init-shard0.js
+      - ./config/keyfile.txt:/usr/local/etc/keyfile.txt
+
+  shard0-2:
+    restart: always
+    container_name: mongodb-shard0-2
+    image: mongo:7.0.2
+    command: mongod --shardsvr --replSet shard0ReplSet --bind_ip_all --keyFile /usr/local/etc/keyfile.txt  --port 27017
+    networks:
+      - maner-ai
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb-shard0-2
+    volumes:
+      - ./data/shard0-2:/data/db
+      - ./config/keyfile.txt:/usr/local/etc/keyfile.txt
+
+  router:
+    depends_on:
+      - config
+      - shard0-1
+    restart: always
+    container_name: mongodb-router
+    image: mongo:7.0.2
+    command: mongos --configdb configReplSet/mongodb-config:27017 --bind_ip_all --keyFile /usr/local/etc/keyfile.txt  --port 27017
+    ports:
+      - "27017:27017"
+    networks:
+      - maner-ai
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=mongos-router
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=password123
+    volumes:
+      - ./scripts/init-mongos.js:/docker-entrypoint-initdb.d/init-mongos.js:ro
+      - ./config/keyfile.txt:/usr/local/etc/keyfile.txt
+
+
+networks:
+  maner-ai:
+   external: true
